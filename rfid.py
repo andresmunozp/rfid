@@ -67,19 +67,39 @@ app = Flask(__name__)
 CORS(app)
 
 @app.route('/api/rfid', methods=['POST'])
-def receive_rfid():
+def add_rfid():
     data = request.json
-    rfid_tag = data.get("rfid")
-    if not rfid_tag:
-        return jsonify({"error": "Etiqueta RFID no proporcionada"}), 400
+    rfid_tag = data.get("rfid_tag")
+    product_name = data.get("product_name")
+    count = data.get("count", 1)  # Por defecto, la cantidad será 1
+    last_seen = data.get("last_seen")
 
-    # Procesar el RFID (ejemplo: agregar a inventario)
-    if rfid_tag not in inventory:
-        inventory[rfid_tag] = {"count": 1, "last_seen": "now"}  # Simula un timestamp
-    else:
-        inventory[rfid_tag]["count"] += 1
+    if not (rfid_tag and product_name and last_seen):
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
-    return jsonify({"message": "Etiqueta recibida correctamente", "rfid": rfid_tag})
+    conn = connect_to_db()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (rfid_tag) DO UPDATE
+                SET count = inventory.count + EXCLUDED.count,
+                    last_seen = EXCLUDED.last_seen
+                """,
+                (rfid_tag, product_name, count, last_seen)
+            )
+            conn.commit()
+            cursor.close()
+            return jsonify({"message": "RFID agregado/actualizado correctamente"}), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "No se pudo conectar a la base de datos"}), 500
+
 
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
