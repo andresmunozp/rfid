@@ -67,16 +67,22 @@ app = Flask(__name__)
 CORS(app)
 
 @app.route('/api/rfid', methods=['POST'])
-def add_rfid():
-    data = request.json
-    rfid_tag = data.get("rfid_tag")
+def add_rfid_entry():
+    data = request.json  # Recibe el JSON enviado desde Arduino
+
+    # Extrae los datos del JSON
+    rfid = data.get("rfid")
     product_name = data.get("product_name")
-    count = data.get("count", 1)  # Por defecto, la cantidad será 1
-    last_seen = data.get("last_seen")
+    count = data.get("count")
 
-    if not (rfid_tag and product_name and last_seen):
-        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+    # Verifica que todos los datos estén presentes
+    if not rfid or not product_name or not count:
+        return jsonify({"error": "Datos incompletos"}), 400
 
+    # Obtiene la fecha y hora actual
+    last_seen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Inserta los datos en la base de datos PostgreSQL
     conn = connect_to_db()
     if conn:
         try:
@@ -85,21 +91,17 @@ def add_rfid():
                 """
                 INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
                 VALUES (%s, %s, %s, %s)
-                ON CONFLICT (rfid_tag) DO UPDATE
-                SET count = inventory.count + EXCLUDED.count,
-                    last_seen = EXCLUDED.last_seen
                 """,
-                (rfid_tag, product_name, count, last_seen)
+                (rfid, product_name, count, last_seen)
             )
             conn.commit()
             cursor.close()
-            return jsonify({"message": "RFID agregado/actualizado correctamente"}), 201
+            return jsonify({"message": "Datos insertados correctamente", "timestamp": last_seen}), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
             conn.close()
-    return jsonify({"error": "No se pudo conectar a la base de datos"}), 500
-
+    return jsonify({"error": "Error al conectar con la base de datos"}), 500
 
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
