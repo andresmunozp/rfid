@@ -80,24 +80,42 @@ def add_rfid_entry():
     if not rfid or not product_name or not count:
         return jsonify({"error": "Datos incompletos"}), 400
 
-    # Obtiene la fecha y hora actual
-    last_seen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Inserta los datos en la base de datos PostgreSQL
+    # Conexión a la base de datos
     conn = connect_to_db()
     if conn:
         try:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (rfid, product_name, count, last_seen)
-            )
-            conn.commit()
-            cursor.close()
-            return jsonify({"message": "Datos insertados correctamente", "timestamp": last_seen}), 201
+
+            # Verifica si el RFID ya existe
+            cursor.execute("SELECT count FROM inventory WHERE rfid_tag = %s", (rfid,))
+            existing_record = cursor.fetchone()
+
+            if existing_record:
+                # Si el RFID ya existe, incrementa la cantidad
+                new_count = existing_record[0] + count
+                cursor.execute(
+                    """
+                    UPDATE inventory
+                    SET count = %s, last_seen = %s
+                    WHERE rfid_tag = %s
+                    """,
+                    (new_count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rfid)
+                )
+                conn.commit()
+                cursor.close()
+                return jsonify({"message": "Cantidad actualizada correctamente", "rfid": rfid, "new_count": new_count}), 200
+            else:
+                # Si el RFID no existe, inserta un nuevo registro
+                cursor.execute(
+                    """
+                    INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (rfid, product_name, count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                )
+                conn.commit()
+                cursor.close()
+                return jsonify({"message": "Datos insertados correctamente", "rfid": rfid}), 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
