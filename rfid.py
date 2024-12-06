@@ -128,5 +128,76 @@ def get_inventory():
             conn.close()
     return jsonify({"error": "No se pudo conectar a la base de datos"}), 500
 
+
+# READ: Obtener un registro específico
+@app.route('/api/rfid/<rfid>', methods=['GET'])
+def get_rfid_entry(rfid):
+    conn = connect_to_db()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM inventory WHERE rfid_tag = %s", (rfid,))
+            row = cursor.fetchone()
+            if row:
+                result = {"rfid": row[0], "product_name": row[1], "count": row[2], "last_seen": row[3]}
+                cursor.close()
+                return jsonify(result), 200
+            else:
+                return jsonify({"error": "Registro no encontrado"}), 404
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "Error al conectar con la base de datos"}), 500
+
+# UPDATE: Actualizar un registro
+@app.route('/api/rfid/<rfid>', methods=['PUT'])
+def update_rfid_entry(rfid):
+    data = request.json
+    product_name = data.get("product_name")
+    count = data.get("count")
+
+    if not product_name or not count:
+        return jsonify({"error": "Datos incompletos"}), 400
+
+    last_seen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = connect_to_db()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE inventory
+                SET product_name = %s, count = %s, last_seen = %s
+                WHERE rfid_tag = %s
+                """,
+                (product_name, count, last_seen, rfid)
+            )
+            conn.commit()
+            cursor.close()
+            return jsonify({"message": "Registro actualizado correctamente"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "Error al conectar con la base de datos"}), 500
+
+# DELETE: Eliminar un registro
+@app.route('/api/rfid/<rfid>', methods=['DELETE'])
+def delete_rfid_entry(rfid):
+    conn = connect_to_db()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM inventory WHERE rfid_tag = %s", (rfid,))
+            conn.commit()
+            cursor.close()
+            return jsonify({"message": "Registro eliminado correctamente"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "Error al conectar con la base de datos"}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
