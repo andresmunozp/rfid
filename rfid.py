@@ -68,54 +68,90 @@ app = Flask(__name__)
 CORS(app)
 
 @app.route('/api/rfid', methods=['POST'])
-def add_rfid_entry():
-    data = request.json  # Recibe el JSON enviado desde Arduino
+def handle_parking():
+    data = request.json  # Receive JSON from Arduino
 
-    # Extrae los datos del JSON
+    # Extract RFID
     rfid = data.get("rfid")
-    product_name = data.get("product_name")
-    count = data.get("count")
+    if not rfid:
+        return jsonify({"error": "RFID no puede estar vacío."}), 400
 
-    # Verifica que todos los datos estén presentes
-    if not rfid or not product_name or not count:
-        return jsonify({"error": "Datos incompletos"}), 400
-
-    # Conexión a la base de datos
     conn = connect_to_db()
     if conn:
         try:
             cursor = conn.cursor()
 
-            # Verifica si el RFID ya existe
-            cursor.execute("SELECT count FROM inventory WHERE rfid_tag = %s", (rfid,))
-            existing_record = cursor.fetchone()
+            # Check RFID for entry/exit
+            entry_rfid = "489c8610"  # Replace with actual RFID value
+            exit_rfid = "857d165"    # Replace with actual RFID value
 
-            if existing_record:
-                # Si el RFID ya existe, incrementa la cantidad
-                new_count = existing_record[0] + count
-                cursor.execute(
-                    """
-                    UPDATE inventory
-                    SET count = %s, last_seen = %s
-                    WHERE rfid_tag = %s
-                    """,
-                    (new_count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rfid)
-                )
-                conn.commit()
-                cursor.close()
-                return jsonify({"message": "Cantidad actualizada correctamente", "rfid": rfid, "new_count": new_count}), 200
+            # Fetch current parking status
+            cursor.execute("SELECT total_spaces, available_spaces FROM parking_status WHERE id = 1")
+            parking_status = cursor.fetchone()
+            if not parking_status:
+                return jsonify({"error": "Estado del parqueadero no encontrado."}), 500
+
+            total_spaces, available_spaces = parking_status
+
+            if rfid == entry_rfid:
+                if available_spaces > 0:
+                    # Occupy a parking space
+                    available_spaces -= 1
+                    cursor.execute(
+                        "UPDATE parking_status SET available_spaces = %s WHERE id = 1",
+                        (available_spaces,)
+                    )
+                    conn.commit()
+                    return jsonify({
+                        "message": "Entrada registrada. Espacio ocupado.",
+                        "available_spaces": available_spaces,
+                        "total_spaces": total_spaces
+                    }), 200
+                else:
+                    return jsonify({"error": "No hay espacios disponibles."}), 400
+
+            elif rfid == exit_rfid:
+                if available_spaces < total_spaces:
+                    # Free a parking space
+                    available_spaces += 1
+                    cursor.execute(
+                        "UPDATE parking_status SET available_spaces = %s WHERE id = 1",
+                        (available_spaces,)
+                    )
+                    conn.commit()
+                    return jsonify({
+                        "message": "Salida registrada. Espacio desocupado.",
+                        "available_spaces": available_spaces,
+                        "total_spaces": total_spaces
+                    }), 200
+                else:
+                    return jsonify({"error": "No hay espacios ocupados para liberar."}), 400
+
             else:
-                # Si el RFID no existe, inserta un nuevo registro
-                cursor.execute(
-                    """
-                    INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (rfid, product_name, count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                )
-                conn.commit()
-                cursor.close()
-                return jsonify({"message": "Datos insertados correctamente", "rfid": rfid}), 201
+                return jsonify({"error": "RFID desconocido."}), 400
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            conn.close()
+    return jsonify({"error": "Error al conectar con la base de datos"}), 500
+
+@app.route('/api/parking_status', methods=['GET'])
+def get_parking_status():
+    conn = connect_to_db()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT total_spaces, available_spaces FROM parking_status WHERE id = 1")
+            parking_status = cursor.fetchone()
+            if parking_status:
+                total_spaces, available_spaces = parking_status
+                return jsonify({
+                    "total_spaces": total_spaces,
+                    "available_spaces": available_spaces
+                }), 200
+            else:
+                return jsonify({"error": "Estado del parqueadero no encontrado."}), 500
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
