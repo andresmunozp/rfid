@@ -171,9 +171,9 @@ def handle_rfid_scan():
             else:
                 return jsonify({"error": "RFID desconocido."}), 400
 
-        # Notify frontend about the updated parking status
-        notify_frontend("parking_update", {"available_spaces": available_spaces})
-        notify_frontend("inventory_update", {"rfid": rfid, "action": "entry"})
+            # Notify frontend about the updated parking status
+            notify_frontend("parking_update", {"available_spaces": available_spaces})
+            notify_frontend("inventory_update", {"rfid": rfid, "action": "entry"})
         
         except Exception as e:
             return jsonify({"error": str(e)}), 500
