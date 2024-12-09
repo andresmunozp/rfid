@@ -76,7 +76,6 @@ def notify_frontend(event, data):
 @app.route('/api/rfid', methods=['POST'])
 def handle_rfid_scan():
     data = request.json
-    print(data)
     rfid = data.get("rfid")
     
     if not rfid:
@@ -125,10 +124,6 @@ def handle_rfid_scan():
 
                     conn.commit()
 
-                    # Notify frontend about the updated parking status
-                    notify_frontend("parking_update", {"available_spaces": available_spaces})
-                    notify_frontend("inventory_update", {"rfid": rfid, "action": "entry"})
-
                     return jsonify({"message": "Entrada registrada.", "available_spaces": available_spaces}), 200
                 else:
                     return jsonify({"error": "No hay espacios disponibles."}), 400
@@ -169,10 +164,6 @@ def handle_rfid_scan():
 
                     conn.commit()
 
-                    # Notify frontend about the updated parking status
-                    notify_frontend("parking_update", {"available_spaces": available_spaces})
-                    notify_frontend("inventory_update", {"rfid": rfid, "action": "exit"})
-
                     return jsonify({"message": "Salida registrada.", "available_spaces": available_spaces}), 200
                 else:
                     return jsonify({"error": "No hay vehículos para salir."}), 400
@@ -180,6 +171,10 @@ def handle_rfid_scan():
             else:
                 return jsonify({"error": "RFID desconocido."}), 400
 
+        # Notify frontend about the updated parking status
+        notify_frontend("parking_update", {"available_spaces": available_spaces})
+        notify_frontend("inventory_update", {"rfid": rfid, "action": "entry"})
+        
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
