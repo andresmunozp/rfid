@@ -82,8 +82,8 @@ def handle_parking():
             cursor = conn.cursor()
 
             # Check RFID for entry/exit
-            entry_rfid = "489c8610"  # Replace with actual RFID value
-            exit_rfid = "857d165"    # Replace with actual RFID value
+            entry_rfid = "701ca630"  # Replace with actual RFID value
+            exit_rfid = "2a99c85"    # Replace with actual RFID value
 
             # Fetch current parking status
             cursor.execute("SELECT total_spaces, available_spaces FROM parking_status WHERE id = 1")
