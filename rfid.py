@@ -3,6 +3,7 @@ from flask_cors import CORS
 import psycopg2
 from psycopg2 import sql
 from datetime import datetime
+from flask_socketio import SocketIO  # Correctly import SocketIO
 
 # Configuración de conexión (usa las credenciales de Neon)
 DB_HOST = "ep-falling-night-a4zni5ez.us-east-1.aws.neon.tech"       # Ejemplo: "your-project-name.neon.tech"
@@ -11,15 +12,19 @@ DB_NAME = "apiIa"
 DB_USER = "neondb_owner"
 DB_PASSWORD = "p4B0cSwgKqae"
 
-# Conectar a la base de datos
+app = Flask(__name__)
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Database connection function remains the same
 def connect_to_db():
     try:
         conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
+            host="ep-falling-night-a4zni5ez.us-east-1.aws.neon.tech",
+            port="5432",
+            database="apiIa",
+            user="neondb_owner",
+            password="p4B0cSwgKqae"
         )
         print("Conexión exitosa a la base de datos")
         return conn
@@ -64,16 +69,18 @@ def insert_rfid(rfid_tag, product_name, count, last_seen):
         finally:
             conn.close()
 
-app = Flask(__name__)
-CORS(app)
+# WebSocket notification function
+def notify_frontend(event, data):
+    socketio.emit(event, data)
+
+def notify_inventory_update():
+    socketio.emit("inventory_update")
 
 @app.route('/api/rfid', methods=['POST'])
 def handle_rfid_scan():
-    data = request.json  # Receive JSON from Arduino or the frontend
-
-    # Extract RFID
+    data = request.json
     rfid = data.get("rfid")
-
+    
     if not rfid:
         return jsonify({"error": "RFID no puede estar vacío."}), 400
 
@@ -81,30 +88,25 @@ def handle_rfid_scan():
     if conn:
         try:
             cursor = conn.cursor()
-
-            # Define RFID values for entry and exit
-            entry_rfid = "2a99c85"  # Replace with your actual entry RFID value
-            exit_rfid = "701ca630"   # Replace with your actual exit RFID value
+            entry_rfid = "2a99c85"
+            exit_rfid = "701ca630"
 
             if rfid == entry_rfid:
-                # Handle entry card logic
+                notify_inventory_update()
                 cursor.execute("SELECT available_spaces FROM parking_status WHERE id = 1")
                 available_spaces = cursor.fetchone()[0]
 
-                if available_spaces > 0:  # Check if there are spaces available
-                    # Decrease available spaces
+                if available_spaces > 0:
                     available_spaces -= 1
                     cursor.execute(
                         "UPDATE parking_status SET available_spaces = %s WHERE id = 1",
                         (available_spaces,)
                     )
 
-                    # Increment entry count in inventory table
                     cursor.execute("SELECT count FROM inventory WHERE rfid_tag = %s", (rfid,))
                     existing_record = cursor.fetchone()
 
                     if existing_record:
-                        # Update existing record
                         new_count = existing_record[0] + 1
                         cursor.execute(
                             """
@@ -115,7 +117,6 @@ def handle_rfid_scan():
                             (new_count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rfid)
                         )
                     else:
-                        # Insert new record for entry
                         cursor.execute(
                             """
                             INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
@@ -126,32 +127,30 @@ def handle_rfid_scan():
 
                     conn.commit()
 
-                    return jsonify({
-                        "message": "Entrada registrada.",
-                        "available_spaces": available_spaces
-                    }), 200
+                    # Notify frontend about the updated parking status
+                    notify_frontend("parking_update", {"available_spaces": available_spaces})
+                    notify_frontend("inventory_update", {"rfid": rfid, "action": "entry"})
+
+                    return jsonify({"message": "Entrada registrada.", "available_spaces": available_spaces}), 200
                 else:
                     return jsonify({"error": "No hay espacios disponibles."}), 400
 
             elif rfid == exit_rfid:
-                # Handle exit card logic
+                notify_inventory_update()
                 cursor.execute("SELECT available_spaces FROM parking_status WHERE id = 1")
                 available_spaces = cursor.fetchone()[0]
 
-                if available_spaces < 150:  # Check if there are cars to exit
-                    # Increase available spaces
+                if available_spaces < 150:
                     available_spaces += 1
                     cursor.execute(
                         "UPDATE parking_status SET available_spaces = %s WHERE id = 1",
                         (available_spaces,)
                     )
 
-                    # Increment exit count in inventory table
                     cursor.execute("SELECT count FROM inventory WHERE rfid_tag = %s", (rfid,))
                     existing_record = cursor.fetchone()
 
                     if existing_record:
-                        # Update existing record
                         new_count = existing_record[0] + 1
                         cursor.execute(
                             """
@@ -162,7 +161,6 @@ def handle_rfid_scan():
                             (new_count, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), rfid)
                         )
                     else:
-                        # Insert new record for exit
                         cursor.execute(
                             """
                             INSERT INTO inventory (rfid_tag, product_name, count, last_seen)
@@ -173,10 +171,11 @@ def handle_rfid_scan():
 
                     conn.commit()
 
-                    return jsonify({
-                        "message": "Salida registrada.",
-                        "available_spaces": available_spaces
-                    }), 200
+                    # Notify frontend about the updated parking status
+                    notify_frontend("parking_update", {"available_spaces": available_spaces})
+                    notify_frontend("inventory_update", {"rfid": rfid, "action": "exit"})
+
+                    return jsonify({"message": "Salida registrada.", "available_spaces": available_spaces}), 200
                 else:
                     return jsonify({"error": "No hay vehículos para salir."}), 400
 
@@ -310,4 +309,4 @@ def delete_rfid_entry(rfid):
     return jsonify({"error": "Error al conectar con la base de datos"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)
