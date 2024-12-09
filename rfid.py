@@ -73,12 +73,10 @@ def insert_rfid(rfid_tag, product_name, count, last_seen):
 def notify_frontend(event, data):
     socketio.emit(event, data)
 
-def notify_inventory_update():
-    socketio.emit("inventory_update")
-
 @app.route('/api/rfid', methods=['POST'])
 def handle_rfid_scan():
     data = request.json
+    print(data)
     rfid = data.get("rfid")
     
     if not rfid:
@@ -92,7 +90,7 @@ def handle_rfid_scan():
             exit_rfid = "701ca630"
 
             if rfid == entry_rfid:
-                notify_inventory_update()
+                
                 cursor.execute("SELECT available_spaces FROM parking_status WHERE id = 1")
                 available_spaces = cursor.fetchone()[0]
 
@@ -136,7 +134,7 @@ def handle_rfid_scan():
                     return jsonify({"error": "No hay espacios disponibles."}), 400
 
             elif rfid == exit_rfid:
-                notify_inventory_update()
+                
                 cursor.execute("SELECT available_spaces FROM parking_status WHERE id = 1")
                 available_spaces = cursor.fetchone()[0]
 
